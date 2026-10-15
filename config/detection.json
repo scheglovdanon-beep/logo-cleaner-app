@@ -1,0 +1,8 @@
+{
+  "auto_threshold": 0.62,
+  "review_threshold": 0.35,
+  "zones": {"torso":[0.24,0.72], "cap":[0.0,0.24], "lower":[0.72,1.0]},
+  "central_column_frac": 0.26,
+  "min_glyphs_per_line": 4,
+  "protect_large_area_frac": 0.02
+}

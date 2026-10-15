@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><title>Чистка логотипов — дашборд</title>
+<style>
+ *{box-sizing:border-box} body{margin:0;font-family:system-ui,Arial;background:#1e2229;color:#e8ecf2;font-size:13px}
+ header{padding:8px 12px;background:#141821;display:flex;gap:10px;align-items:center;border-bottom:1px solid #000}
+ .wrap{display:flex;height:calc(100vh - 46px)}
+ .side{width:240px;background:#181c24;overflow:auto;border-right:1px solid #000;padding:8px}
+ .fig{padding:7px 9px;border-radius:6px;cursor:pointer;margin-bottom:5px;background:#232833;display:flex;justify-content:space-between;align-items:center}
+ .fig.sel{outline:2px solid #2f6fe0} .fig:hover{background:#2a303c}
+ .badge{font-size:10px;padding:1px 6px;border-radius:9px}
+ .b-pending{background:#5a6472}.b-cleaned{background:#b8860b}.b-approved{background:#1f9d55}
+ .main{flex:1;overflow:auto;padding:12px;background:#2b2f37}
+ canvas{background:#9a9a9a;box-shadow:0 2px 10px #0008;cursor:crosshair}
+ .bar{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+ button{background:#2f6fe0;color:#fff;border:0;border-radius:6px;padding:7px 12px;cursor:pointer;font-size:13px}
+ button.g{background:#1f9d55} button.r{background:#c6473a} button.s{background:#3a4150}
+ button:disabled{opacity:.4;cursor:default}
+ .box{display:inline-block;background:#2a2f38;border-radius:5px;padding:2px 7px;margin:2px;font-size:11px}
+ .msg{color:#9aa6b5;margin-left:6px}
+</style></head>
+<body>
+<header>
+ <b>🧽 Чистка логотипов</b>
+ <span class="msg" id="stat">выбери фигуру слева</span>
+ <span style="flex:1"></span>
+ <span class="msg">рисуй рамку на логотипе · несколько можно · по обеим панелям</span>
+</header>
+<div class="wrap">
+ <div class="side" id="list"></div>
+ <div class="main">
+   <div class="bar">
+     <button class="s" onclick="clearBoxes()">Очистить рамки</button>
+     <button onclick="doClean()" id="cleanBtn">🧽 Вычистить лого</button>
+     <button class="s" onclick="toggleView()" id="viewBtn" disabled>До/После</button>
+     <button class="g" onclick="approve()" id="okBtn" disabled>✓ Подтвердить → в «чистые»</button>
+     <button class="r" onclick="resetFig()" id="resetBtn" disabled>✗ Сбросить</button>
+     <span class="msg" id="val"></span>
+   </div>
+   <div id="boxes"></div>
+   <canvas id="cv" width="800" height="600"></canvas>
+ </div>
+</div>
+<script>
+let cur=null, page=null, boxes=[], img=new Image(), showing="input", drag=null, DISP=1;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+
+async function loadFigs(){
+ const r=await fetch('/api/figures'); const figs=await r.json();
+ const host=document.getElementById('list'); host.innerHTML='';
+ figs.forEach(f=>{
+   const d=document.createElement('div'); d.className='fig'+(f.id===cur?' sel':'');
+   d.innerHTML=`<span>${f.id.replace('.pdf','').slice(0,22)}</span><span class="badge b-${f.status}">${f.status}</span>`;
+   d.onclick=()=>select(f.id); host.appendChild(d);
+ });
+}
+async function select(id){
+ cur=id; boxes=[]; showing="input";
+ page=await (await fetch('/api/pageinfo?id='+encodeURIComponent(id))).json();
+ img=new Image();
+ img.onload=()=>{ layout(); draw(); };
+ img.src='/api/image?which=input&id='+encodeURIComponent(id)+'&t='+Date.now();
+ document.getElementById('stat').textContent=id;
+ document.getElementById('val').textContent='';
+ document.getElementById('viewBtn').disabled=true; document.getElementById('okBtn').disabled=true; document.getElementById('resetBtn').disabled=true;
+ loadFigs(); renderBoxes();
+}
+function layout(){ const maxW=Math.min(1100, window.innerWidth-300);
+ DISP=Math.min(maxW/img.naturalWidth, (window.innerHeight-160)/img.naturalHeight, 1);
+ cv.width=img.naturalWidth*DISP; cv.height=img.naturalHeight*DISP; }
+const PT=()=> page.dpi/72;                 // natural px per pt
+function pt2disp(x){ return x*PT()*DISP; } // pt -> canvas px
+function disp2pt(x){ return x/DISP/PT(); } // canvas px -> pt
+function draw(){ ctx.clearRect(0,0,cv.width,cv.height); ctx.drawImage(img,0,0,cv.width,cv.height);
+ if(showing==='input'){ boxes.forEach(b=>{ ctx.strokeStyle='#ff3030';ctx.lineWidth=2;
+   ctx.strokeRect(pt2disp(b[0]),pt2disp(b[1]),pt2disp(b[2]-b[0]),pt2disp(b[3]-b[1])); }); }
+}
+cv.addEventListener('mousedown',e=>{ if(showing!=='input')return; const r=cv.getBoundingClientRect();
+ drag={x:e.clientX-r.left,y:e.clientY-r.top,cx:e.clientX-r.left,cy:e.clientY-r.top}; });
+window.addEventListener('mousemove',e=>{ if(!drag)return; const r=cv.getBoundingClientRect();
+ drag.cx=e.clientX-r.left; drag.cy=e.clientY-r.top; draw();
+ ctx.strokeStyle='#ff3030';ctx.lineWidth=2;ctx.strokeRect(Math.min(drag.x,drag.cx),Math.min(drag.y,drag.cy),Math.abs(drag.cx-drag.x),Math.abs(drag.cy-drag.y)); });
+window.addEventListener('mouseup',()=>{ if(!drag)return;
+ const x0=disp2pt(Math.min(drag.x,drag.cx)),y0=disp2pt(Math.min(drag.y,drag.cy)),x1=disp2pt(Math.max(drag.x,drag.cx)),y1=disp2pt(Math.max(drag.y,drag.cy));
+ if(Math.abs(x1-x0)>4&&Math.abs(y1-y0)>4) boxes.push([x0,y0,x1,y1]);
+ drag=null; draw(); renderBoxes(); });
+function renderBoxes(){ const h=document.getElementById('boxes'); h.innerHTML=boxes.map((b,i)=>
+  `<span class="box">рамка ${i+1}: [${b.map(v=>Math.round(v)).join(', ')}] <a href="#" onclick="delBox(${i});return false" style="color:#f88">✕</a></span>`).join(''); }
+function delBox(i){ boxes.splice(i,1); draw(); renderBoxes(); }
+function clearBoxes(){ boxes=[]; draw(); renderBoxes(); }
+async function doClean(){ if(!cur||!boxes.length){alert('нарисуй хотя бы одну рамку');return;}
+ document.getElementById('val').textContent='чищу…';
+ const r=await fetch('/api/clean',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cur,boxes})});
+ const j=await r.json();
+ const v=j.validate; document.getElementById('val').textContent=`удалено ${j.removed} объектов · размер ${v.page_size_ok?'ок':'ИЗМ'} · вектор ${v.still_vector?'да':'НЕТ'} · исходник цел ${v.input_untouched?'да':'НЕТ'}`;
+ showing='output'; img=new Image(); img.onload=()=>{layout();draw();}; img.src='/api/image?which=output&id='+encodeURIComponent(cur)+'&t='+Date.now();
+ document.getElementById('viewBtn').disabled=false; document.getElementById('okBtn').disabled=false; document.getElementById('resetBtn').disabled=false;
+ loadFigs();
+}
+function toggleView(){ showing=(showing==='output')?'input':'output';
+ img=new Image(); img.onload=()=>{layout();draw();}; img.src='/api/image?which='+showing+'&id='+encodeURIComponent(cur)+'&t='+Date.now(); }
+async function approve(){ await fetch('/api/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cur})});
+ document.getElementById('val').textContent='✓ перенесено в clean/'; loadFigs(); }
+async function resetFig(){ await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cur})});
+ select(cur); }
+window.addEventListener('resize',()=>{ if(cur){layout();draw();} });
+loadFigs();
+</script>
+</body></html>

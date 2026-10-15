@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: logo-cleaner
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    disk:
+      name: data
+      mountPath: /app/clean
+      sizeGB: 1
